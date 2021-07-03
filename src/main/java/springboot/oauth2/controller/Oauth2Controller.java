@@ -1,5 +1,7 @@
 package springboot.oauth2.controller;
 
+import com.google.common.base.Splitter;
+import java.util.Map;
 import org.json.JSONObject;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -16,7 +18,7 @@ import org.springframework.web.client.RestTemplate;
 
 @RestController
 @RequestMapping(value = "/login/oauth2/code")
-public class MemberOauth2Controller {
+public class Oauth2Controller {
 
     @GetMapping(value = "/kakao")
     public String kakaoOauthRedirect(@RequestParam String code) {
@@ -116,7 +118,7 @@ public class MemberOauth2Controller {
 
     @GetMapping(value = "/naver")
     @ResponseBody
-    public String naverOAuthRedirect(@RequestParam String code, @RequestParam String state) {
+    public String naverOauthRedirect(@RequestParam String code, @RequestParam String state) {
         RestTemplate rt = new RestTemplate();
 
         HttpHeaders accessTokenHeaders = new HttpHeaders();
@@ -192,6 +194,72 @@ public class MemberOauth2Controller {
         result.append("access_token : " + access_token + "<br><br>");
         result.append("access_token_expires_in : " + expires_in + "<br><br>");
         result.append("refresh_token : " + refresh_token + "<br><br>");
+
+        return result.toString();
+    }
+
+    @GetMapping(value = "/github")
+    public String githubOauthRedirect(@RequestParam String code) {
+
+        RestTemplate rt = new RestTemplate();
+
+        HttpHeaders accessTokenHeaders = new HttpHeaders();
+        accessTokenHeaders.add("Content-type", "application/x-www-form-urlencoded");
+
+        MultiValueMap<String, String> accessTokenParams = new LinkedMultiValueMap<>();
+        accessTokenParams.add("client_id", "96f270ce3e0af33e8075");
+        accessTokenParams.add("client_secret", "470fd0775463bf507847f704c63d8d57a67aaf88");
+        accessTokenParams.add("code", code);
+
+        HttpEntity<MultiValueMap<String, String>> accessTokenRequest = new HttpEntity<>(
+            accessTokenParams, accessTokenHeaders);
+
+        ResponseEntity<String> accessTokenResponse = rt.exchange(
+            "https://github.com/login/oauth/access_token",
+            HttpMethod.POST,
+            accessTokenRequest,
+            String.class
+        );
+
+        String body = accessTokenResponse.getBody();
+        String queryString = body;
+        Map<String, String> queryParameters = Splitter
+            .on("&")
+            .withKeyValueSeparator("=")
+            .split(queryString);
+
+        String access_token = queryParameters.get("access_token");
+
+        HttpHeaders profileRequestHeader = new HttpHeaders();
+        profileRequestHeader.add("Authorization", "token " + access_token);
+
+        HttpEntity<HttpHeaders> profileHttpEntity = new HttpEntity<>(profileRequestHeader);
+
+        ResponseEntity<String> profileResponse = rt.exchange(
+            "https://api.github.com/user",
+            HttpMethod.GET,
+            profileHttpEntity,
+            String.class
+        );
+
+        JSONObject jsonObject = new JSONObject(profileResponse.getBody());
+        String login = jsonObject.getString("login");
+        String avatar_url = jsonObject.getString("avatar_url");
+        String name = jsonObject.getString("name");
+        String company = jsonObject.getString("company");
+        String blog = jsonObject.getString("blog");
+        String email = jsonObject.getString("email");
+        String location = jsonObject.getString("location");
+
+        StringBuilder result = new StringBuilder();
+        result.append("<h1>깃헙 로그인 성공</h1>");
+        result.append("login : " + login + "<br><br>");
+        result.append("avatar_url : " + avatar_url + "<br><br>");
+        result.append("name : " + name + "<br><br>");
+        result.append("company : " + company + "<br><br>");
+        result.append("blog : " + blog + "<br><br>");
+        result.append("email : " + email + "<br><br>");
+        result.append("location : " + location + "<br><br>");
 
         return result.toString();
     }
