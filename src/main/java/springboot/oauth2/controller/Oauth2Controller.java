@@ -12,7 +12,6 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
@@ -20,80 +19,56 @@ import org.springframework.web.client.RestTemplate;
 @RequestMapping(value = "/login/oauth2/code")
 public class Oauth2Controller {
 
-    @GetMapping(value = "/kakao")
+    @GetMapping(value = "/kakao") // 2. 인증 코드 전달
     public String kakaoOauthRedirect(@RequestParam String code) {
-        RestTemplate rt = new RestTemplate();
+        // 3. 인증 코드로 토큰 요청
+        RestTemplate restTemplate = new RestTemplate();
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.add("Content-type", "application/x-www-form-urlencoded;charset=utf-8");
+        HttpHeaders tokenRequestHeader = new HttpHeaders(); // http 요청 헤더 만들기
+        tokenRequestHeader.add("Content-type", "application/x-www-form-urlencoded;charset=utf-8");
 
-        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-        params.add("grant_type", "authorization_code");
-        params.add("client_id", "4ad4e652cfa8fa6db82ca693773c7d3f");
-        params.add("redirect_uri", "http://localhost:8080/login/oauth2/code/kakao");
-        params.add("code", code);
-        params.add("client_secret", "4A32EmOsHyuAKAmijabrPBjspReisLgx");
+        MultiValueMap<String, String> tokenRequestBody = new LinkedMultiValueMap<>(); // http 요청 바디 만들기
+        tokenRequestBody.add("grant_type", "authorization_code");
+        tokenRequestBody.add("code", code);
+        tokenRequestBody.add("client_id", "4ad4e652cfa8fa6db82ca693773c7d3f");
+        tokenRequestBody.add("client_secret", "4A32EmOsHyuAKAmijabrPBjspReisLgx");
+        tokenRequestBody.add("redirect_uri", "http://localhost:8080/login/oauth2/code/kakao");
 
-        HttpEntity<MultiValueMap<String, String>> kakaoRequest = new HttpEntity<>(params, headers);
+        HttpEntity<MultiValueMap<String, String>> tokenRequest = new HttpEntity<>(tokenRequestBody,
+            tokenRequestHeader);
 
-        ResponseEntity<String> response = rt.exchange(
+        ResponseEntity<String> tokenResponse = restTemplate.exchange( // 인증 코드로 토큰을 요청한다.
             "https://kauth.kakao.com/oauth/token",
             HttpMethod.POST,
-            kakaoRequest,
+            tokenRequest,
             String.class
         );
 
-        String jsonString = response.getBody();
-        JSONObject jsonObject = new JSONObject(jsonString);
+        // 4. 토큰 전달 받음
+        JSONObject jsonObject = new JSONObject(tokenResponse.getBody());
+
         String access_token = jsonObject.getString("access_token");
         String refresh_token = jsonObject.getString("refresh_token");
         Integer expires_in = (Integer) jsonObject.get("expires_in");
         Integer refresh_token_expires_in = (Integer) jsonObject.get("refresh_token_expires_in");
         String token_type = jsonObject.getString("token_type");
 
-        System.out.println("[카카오 서버로부터 access_token을 받아왔습니다.]");
-        System.out.println("access_token : " + access_token);
-        System.out.println();
+        // 5. 토큰으로 카카오 API 호출 (카카오 서버에서 토큰 유효성 확인후 사용자 데이터 받아옴)
+        HttpHeaders apiRequestHeader = new HttpHeaders();
+        apiRequestHeader.add("Authorization", "Bearer " + access_token);
+        apiRequestHeader.add("Content-type", "application/x-www-form-urlencoded;charset=utf8");
+        HttpEntity<HttpHeaders> apiRequest = new HttpEntity<>(apiRequestHeader);
 
-        // 토큰으로 카카오 서버에서 사용자 정보 가져오기
-        HttpHeaders headers1 = new HttpHeaders();
-        headers1.add("Authorization", "Bearer " + access_token);
-        headers1.add("Content-type", "application/x-www-form-urlencoded;charset=utf8");
-
-        HttpEntity<HttpHeaders> kakaoRequest1 = new HttpEntity<>(headers1);
-
-        HttpEntity<String> profileResponse = rt.exchange(
+        HttpEntity<String> apiResponse = restTemplate.exchange( // 토큰과 함께 api를 호출한다.
             "https://kapi.kakao.com/v2/user/me",
             HttpMethod.POST,
-            kakaoRequest1,
+            apiRequest,
             String.class
         );
 
-        JSONObject jsonObject2 = new JSONObject(profileResponse.getBody());
-        System.out.println("[카카오 로그인 완료.. 카카오 사용자 정보를 출력합니다...]");
-        System.out.println(jsonObject2);
-        System.out.println();
-
-        // 발급 받은 토큰이 유효한지 검증하기
-        HttpHeaders headers2 = new HttpHeaders();
-        headers2.add("Authorization", "Bearer " + access_token);
-        headers2.add("Content-type", "application/x-www-form-urlencoded;charset=utf-8");
-
-        HttpEntity<MultiValueMap<String, String>> kakaoRequest2 = new HttpEntity<>(headers2);
-
-        RestTemplate rt2 = new RestTemplate();
-        ResponseEntity<String> response2 = rt2.exchange(
-            "https://kapi.kakao.com/v1/user/access_token_info",
-            HttpMethod.GET,
-            kakaoRequest2,
-            String.class
-        );
-
-        JSONObject jsonObject3 = new JSONObject(profileResponse.getBody());
-        System.out.println("[토큰 유효성 검사 완료.. 결과를 출력합니다.]");
-        System.out.println(jsonObject3);
-
-        JSONObject kakao_account = (JSONObject) jsonObject3.get("kakao_account");
+        // 응답 결과 파싱
+        JSONObject jsonObject2 = new JSONObject(apiResponse.getBody());
+        JSONObject kakao_account = (JSONObject) jsonObject2.get("kakao_account");
         String birthday = kakao_account.getString("birthday");
         String gender = kakao_account.getString("gender");
         String email = kakao_account.getString("email");
@@ -116,55 +91,54 @@ public class Oauth2Controller {
         return result.toString();
     }
 
-    @GetMapping(value = "/naver")
-    @ResponseBody
+    @GetMapping(value = "/naver") // 2. 인증 코드 전달
     public String naverOauthRedirect(@RequestParam String code, @RequestParam String state) {
-        RestTemplate rt = new RestTemplate();
+        // 3. 인증 코드로 토큰 요청
+        RestTemplate restTemplate = new RestTemplate();
 
-        HttpHeaders accessTokenHeaders = new HttpHeaders();
-        accessTokenHeaders.add("Content-type", "application/x-www-form-urlencoded");
+        HttpHeaders tokenRequestHeader = new HttpHeaders();
+        tokenRequestHeader.add("Content-type", "application/x-www-form-urlencoded");
 
-        MultiValueMap<String, String> accessTokenParams = new LinkedMultiValueMap<>();
-        accessTokenParams.add("grant_type", "authorization_code");
-        accessTokenParams.add("client_id", "rhOOnuIVRpuKUyYMtzTh");
-        accessTokenParams.add("client_secret", "SbYD_Wy7lz");
-        accessTokenParams.add("code", code);
-        accessTokenParams.add("state", state);
+        MultiValueMap<String, String> tokenReqestBody = new LinkedMultiValueMap<>();
+        tokenReqestBody.add("grant_type", "authorization_code");
+        tokenReqestBody.add("client_id", "rhOOnuIVRpuKUyYMtzTh");
+        tokenReqestBody.add("client_secret", "SbYD_Wy7lz");
+        tokenReqestBody.add("code", code);
+        tokenReqestBody.add("state", state);
 
-        HttpEntity<MultiValueMap<String, String>> accessTokenRequest = new HttpEntity<>(
-            accessTokenParams, accessTokenHeaders);
+        HttpEntity<MultiValueMap<String, String>> tokenRequest = new HttpEntity<>(tokenReqestBody,
+            tokenRequestHeader);
 
-        ResponseEntity<String> accessTokenResponse = rt.exchange(
+        ResponseEntity<String> tokenResponse = restTemplate.exchange(
             "https://nid.naver.com/oauth2.0/token",
             HttpMethod.POST,
-            accessTokenRequest,
+            tokenRequest,
             String.class
         );
 
-        String jsonString = accessTokenResponse.getBody();
-        JSONObject jsonObject = new JSONObject(jsonString);
+        // 4. 토큰 전달 받음
+        JSONObject jsonObject = new JSONObject(tokenResponse.getBody());
         String access_token = jsonObject.getString("access_token");
         String refresh_token = jsonObject.getString("refresh_token");
         String token_type = jsonObject.getString("token_type");
         String expires_in = jsonObject.getString("expires_in");
 
-        // profile api로 생성해둔 헤더를 담아서 요청을 보냅니다.
-        HttpHeaders profileRequestHeader = new HttpHeaders();
-        profileRequestHeader.add("Authorization", "Bearer " + access_token);
+        // 5. 토큰으로 카카오 API 호출 (카카오 서버에서 토큰 유효성 확인후 사용자 데이터 받아옴)
+        HttpHeaders apiRequestHeader = new HttpHeaders();
+        apiRequestHeader.add("Authorization", "Bearer " + access_token);
+        HttpEntity<HttpHeaders> profileHttpEntity = new HttpEntity<>(apiRequestHeader);
 
-        HttpEntity<HttpHeaders> profileHttpEntity = new HttpEntity<>(profileRequestHeader);
-
-        // profile api로 생성해둔 헤더를 담아서 요청을 보냅니다.
-        ResponseEntity<String> profileResponse = rt.exchange(
+        ResponseEntity<String> apiResponse = restTemplate.exchange(
             "https://openapi.naver.com/v1/nid/me",
             HttpMethod.POST,
             profileHttpEntity,
             String.class
         );
 
-        String jsonString2 = profileResponse.getBody();
-        JSONObject jsonObject2 = new JSONObject(jsonString2);
+        // 응답 결과 파싱
+        JSONObject jsonObject2 = new JSONObject(apiResponse.getBody());
         JSONObject response = (JSONObject) jsonObject2.get("response");
+
         String id = response.getString("id");
         String nickname = response.getString("nickname");
         String profile_image = response.getString("profile_image");
@@ -199,30 +173,30 @@ public class Oauth2Controller {
     }
 
     @GetMapping(value = "/github")
-    public String githubOauthRedirect(@RequestParam String code) {
+    public String githubOauthRedirect(@RequestParam String code) { // 2. 인증 코드 전달
+        // 3. 인증 코드로 토큰 요청
+        RestTemplate restTemplate = new RestTemplate();
 
-        RestTemplate rt = new RestTemplate();
+        HttpHeaders tokenRequestHeader = new HttpHeaders();
+        tokenRequestHeader.add("Content-type", "application/x-www-form-urlencoded");
 
-        HttpHeaders accessTokenHeaders = new HttpHeaders();
-        accessTokenHeaders.add("Content-type", "application/x-www-form-urlencoded");
+        MultiValueMap<String, String> tokenResponseBody = new LinkedMultiValueMap<>();
+        tokenResponseBody.add("client_id", "96f270ce3e0af33e8075");
+        tokenResponseBody.add("client_secret", "470fd0775463bf507847f704c63d8d57a67aaf88");
+        tokenResponseBody.add("code", code);
 
-        MultiValueMap<String, String> accessTokenParams = new LinkedMultiValueMap<>();
-        accessTokenParams.add("client_id", "96f270ce3e0af33e8075");
-        accessTokenParams.add("client_secret", "470fd0775463bf507847f704c63d8d57a67aaf88");
-        accessTokenParams.add("code", code);
+        HttpEntity<MultiValueMap<String, String>> tokenRequest = new HttpEntity<>(tokenResponseBody,
+            tokenRequestHeader);
 
-        HttpEntity<MultiValueMap<String, String>> accessTokenRequest = new HttpEntity<>(
-            accessTokenParams, accessTokenHeaders);
-
-        ResponseEntity<String> accessTokenResponse = rt.exchange(
+        ResponseEntity<String> tokenResponse = restTemplate.exchange(
             "https://github.com/login/oauth/access_token",
             HttpMethod.POST,
-            accessTokenRequest,
+            tokenRequest,
             String.class
         );
 
-        String body = accessTokenResponse.getBody();
-        String queryString = body;
+        // 4. 토큰 전달 받음
+        String queryString = tokenResponse.getBody();
         Map<String, String> queryParameters = Splitter
             .on("&")
             .withKeyValueSeparator("=")
@@ -230,19 +204,20 @@ public class Oauth2Controller {
 
         String access_token = queryParameters.get("access_token");
 
-        HttpHeaders profileRequestHeader = new HttpHeaders();
-        profileRequestHeader.add("Authorization", "token " + access_token);
+        // 5. 토큰으로 카카오 API 호출 (카카오 서버에서 토큰 유효성 확인후 사용자 데이터 받아옴)
+        HttpHeaders apiRequestHeader = new HttpHeaders();
+        apiRequestHeader.add("Authorization", "token " + access_token);
+        HttpEntity<HttpHeaders> apiRequest = new HttpEntity<>(apiRequestHeader);
 
-        HttpEntity<HttpHeaders> profileHttpEntity = new HttpEntity<>(profileRequestHeader);
-
-        ResponseEntity<String> profileResponse = rt.exchange(
+        ResponseEntity<String> apiResponse = restTemplate.exchange(
             "https://api.github.com/user",
             HttpMethod.GET,
-            profileHttpEntity,
+            apiRequest,
             String.class
         );
 
-        JSONObject jsonObject = new JSONObject(profileResponse.getBody());
+        // 응답 결과 파싱
+        JSONObject jsonObject = new JSONObject(apiResponse.getBody());
         String login = jsonObject.getString("login");
         String avatar_url = jsonObject.getString("avatar_url");
         String name = jsonObject.getString("name");
@@ -260,7 +235,9 @@ public class Oauth2Controller {
         result.append("blog : " + blog + "<br><br>");
         result.append("email : " + email + "<br><br>");
         result.append("location : " + location + "<br><br>");
+        result.append("access_token : " + access_token + "<br><br>");
 
         return result.toString();
     }
+
 }
